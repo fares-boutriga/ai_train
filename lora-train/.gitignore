@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+.env.local
+.env.prod
+
+outputs/
+wandb/
+runs/
+

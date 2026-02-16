@@ -1,0 +1,3 @@
+{"instruction":"Explain QLoRA in one sentence.","input":"","output":"QLoRA fine-tunes low-rank adapters on top of a 4-bit quantized base model to reduce memory usage."}
+{"messages":[{"role":"system","content":"You are concise and accurate."},{"role":"user","content":"Why use bf16 on modern GPUs?"},{"role":"assistant","content":"bf16 keeps a wider exponent range than fp16, which often improves training stability while keeping memory usage low."}]}
+

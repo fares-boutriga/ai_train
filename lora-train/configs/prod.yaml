@@ -1,0 +1,47 @@
+model_id: "Qwen/Qwen2.5-14B-Instruct"
+data_train_path: "/workspace/lora-train/data/sample_train.jsonl"
+data_eval_path: "/workspace/lora-train/data/sample_eval.jsonl"
+output_dir: "/workspace/outputs"
+run_name: "qwen25-14b-runpod-lora"
+seed: 42
+
+max_seq_len: 4096
+micro_batch_size: 1
+grad_accum_steps: 8
+num_epochs: 1.0
+learning_rate: 0.00015
+warmup_ratio: 0.03
+weight_decay: 0.01
+lr_scheduler: "cosine"
+max_steps: -1
+eval_strategy: "steps"
+save_steps: 100
+eval_steps: 100
+logging_steps: 10
+
+use_qlora: true
+load_in_4bit: true
+bnb_4bit_quant_type: "nf4"
+bnb_4bit_compute_dtype: "bfloat16"
+gradient_checkpointing: true
+bf16: true
+fp16: false
+
+lora_r: 32
+lora_alpha: 64
+lora_dropout: 0.05
+lora_target_modules: null
+packing: true
+eval_split_ratio: 0.05
+system_prompt: "You are a helpful assistant."
+resume_from_checkpoint: null
+
+wandb_project: null
+wandb_entity: null
+wandb_api_key: null
+hf_token: null
+push_to_hub: false
+hub_repo_id: null
+hub_private: true
+trust_remote_code: false
+attn_implementation: null

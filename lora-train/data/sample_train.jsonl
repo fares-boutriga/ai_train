@@ -1,0 +1,5 @@
+{"instruction":"Summarize this sentence in one line.","input":"LoRA fine-tuning is efficient because only small adapter matrices are trained.","output":"LoRA fine-tuning is efficient because it updates only small adapter weights."}
+{"instruction":"Translate to French.","input":"Machine learning models can be adapted with domain data.","output":"Les modeles d'apprentissage automatique peuvent etre adaptes avec des donnees de domaine."}
+{"instruction":"Write a short email subject.","input":"We deployed the RunPod training pipeline successfully.","output":"RunPod Training Pipeline Deployed Successfully"}
+{"messages":[{"role":"system","content":"You are concise and accurate."},{"role":"user","content":"What is gradient accumulation?"},{"role":"assistant","content":"Gradient accumulation simulates a larger batch size by summing gradients across multiple micro-steps before an optimizer update."}]}
+
