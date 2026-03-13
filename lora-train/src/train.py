@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import logging
 from pathlib import Path
 from typing import Any, Dict
@@ -13,7 +14,7 @@ from transformers import (
     TrainingArguments,
     set_seed,
 )
-from trl import SFTTrainer
+from trl import SFTConfig, SFTTrainer
 
 from .config import ConfigError, load_train_config, parse_override_pairs, save_resolved_config
 from .dataset import ensure_path_exists, load_chat_records, records_to_sft_dataset
@@ -82,6 +83,28 @@ def _resolve_target_modules(config_target_modules: list[str] | None, model_id: s
     return config_target_modules or default_lora_target_modules(model_id)
 
 
+def _set_eval_strategy_kwargs(
+    training_kwargs: Dict[str, Any],
+    eval_strategy: str,
+    has_eval_dataset: bool,
+    eval_steps: int,
+    parameter_names: set[str],
+) -> None:
+    """Support eval strategy naming differences across argument classes."""
+    strategy_value = eval_strategy if has_eval_dataset else "no"
+    if "evaluation_strategy" in parameter_names:
+        training_kwargs["evaluation_strategy"] = strategy_value
+    elif "eval_strategy" in parameter_names:
+        training_kwargs["eval_strategy"] = strategy_value
+    else:  # pragma: no cover - defensive fallback for future API changes
+        raise SystemExit(
+            "Unsupported trainer args class: no eval strategy parameter found."
+        )
+
+    if strategy_value == "steps":
+        training_kwargs["eval_steps"] = eval_steps
+
+
 def _load_tokenizer(model_id: str, trust_remote_code: bool, token: str | None):
     tokenizer = AutoTokenizer.from_pretrained(
         model_id,
@@ -139,6 +162,47 @@ def _load_model(cfg, target_modules: list[str]):
         task_type="CAUSAL_LM",
     )
     return model, lora_config
+
+
+def _should_use_sft_config() -> bool:
+    params = inspect.signature(SFTTrainer.__init__).parameters
+    return "processing_class" in params
+
+
+def _build_trainer_args(cfg, training_kwargs: Dict[str, Any]):
+    if _should_use_sft_config():
+        sft_param_names = set(inspect.signature(SFTConfig.__init__).parameters)
+        _set_eval_strategy_kwargs(
+            training_kwargs=training_kwargs,
+            eval_strategy=cfg.eval_strategy,
+            has_eval_dataset=True,
+            eval_steps=cfg.eval_steps,
+            parameter_names=sft_param_names,
+        )
+        sft_kwargs = {
+            key: value
+            for key, value in training_kwargs.items()
+            if key in sft_param_names and value is not None
+        }
+        if "dataset_text_field" in sft_param_names:
+            sft_kwargs["dataset_text_field"] = "text"
+        if "max_length" in sft_param_names:
+            sft_kwargs["max_length"] = cfg.max_seq_len
+        elif "max_seq_length" in sft_param_names:
+            sft_kwargs["max_seq_length"] = cfg.max_seq_len
+        if "packing" in sft_param_names:
+            sft_kwargs["packing"] = cfg.packing
+        return SFTConfig(**sft_kwargs)
+
+    train_arg_names = set(inspect.signature(TrainingArguments.__init__).parameters)
+    _set_eval_strategy_kwargs(
+        training_kwargs=training_kwargs,
+        eval_strategy=cfg.eval_strategy,
+        has_eval_dataset=True,
+        eval_steps=cfg.eval_steps,
+        parameter_names=train_arg_names,
+    )
+    return TrainingArguments(**training_kwargs)
 
 
 def main() -> None:
@@ -206,6 +270,15 @@ def main() -> None:
     eval_dataset = (
         records_to_sft_dataset(eval_records, tokenizer=tokenizer) if eval_records else None
     )
+    if _should_use_sft_config():
+        # Keep only raw text for TRL>=0.28 to avoid prompt/completion mask shape issues.
+        train_drop_cols = [c for c in train_dataset.column_names if c != "text"]
+        if train_drop_cols:
+            train_dataset = train_dataset.remove_columns(train_drop_cols)
+        if eval_dataset is not None:
+            eval_drop_cols = [c for c in eval_dataset.column_names if c != "text"]
+            if eval_drop_cols:
+                eval_dataset = eval_dataset.remove_columns(eval_drop_cols)
 
     report_to = resolve_report_to(cfg.wandb_project)
     training_kwargs: Dict[str, Any] = {
@@ -222,8 +295,6 @@ def main() -> None:
         "logging_steps": cfg.logging_steps,
         "save_steps": cfg.save_steps,
         "save_strategy": "steps",
-        "evaluation_strategy": cfg.eval_strategy if eval_dataset is not None else "no",
-        "eval_steps": cfg.eval_steps if cfg.eval_strategy == "steps" else None,
         "bf16": cfg.bf16,
         "fp16": cfg.fp16,
         "gradient_checkpointing": cfg.gradient_checkpointing,
@@ -234,22 +305,33 @@ def main() -> None:
         "logging_first_step": True,
         "remove_unused_columns": False,
     }
+    if eval_dataset is None:
+        cfg.eval_strategy = "no"
     if torch.cuda.device_count() > 1:
         training_kwargs["ddp_find_unused_parameters"] = False
 
-    training_args = TrainingArguments(**training_kwargs)
+    trainer_args = _build_trainer_args(cfg=cfg, training_kwargs=training_kwargs)
 
-    trainer = SFTTrainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        peft_config=lora_config,
-        tokenizer=tokenizer,
-        dataset_text_field="text",
-        max_seq_length=cfg.max_seq_len,
-        packing=cfg.packing,
-    )
+    trainer_kwargs: Dict[str, Any] = {
+        "model": model,
+        "args": trainer_args,
+        "train_dataset": train_dataset,
+        "eval_dataset": eval_dataset,
+        "peft_config": lora_config,
+    }
+    trainer_param_names = set(inspect.signature(SFTTrainer.__init__).parameters)
+    if "tokenizer" in trainer_param_names:
+        trainer_kwargs["tokenizer"] = tokenizer
+    elif "processing_class" in trainer_param_names:
+        trainer_kwargs["processing_class"] = tokenizer
+    if "dataset_text_field" in trainer_param_names:
+        trainer_kwargs["dataset_text_field"] = "text"
+    if "max_seq_length" in trainer_param_names:
+        trainer_kwargs["max_seq_length"] = cfg.max_seq_len
+    if "packing" in trainer_param_names:
+        trainer_kwargs["packing"] = cfg.packing
+
+    trainer = SFTTrainer(**trainer_kwargs)
 
     logger.info("Starting training run: %s", cfg.run_name)
     train_output = trainer.train(resume_from_checkpoint=cfg.resume_from_checkpoint)

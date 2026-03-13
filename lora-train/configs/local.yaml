@@ -1,8 +1,8 @@
-model_id: "mistralai/Mistral-7B-Instruct-v0.2"
+model_id: "Qwen/Qwen2.5-0.5B-Instruct"
 data_train_path: "data/sample_train.jsonl"
 data_eval_path: "data/sample_eval.jsonl"
 output_dir: "outputs"
-run_name: "mistral7b-local-lora"
+run_name: "qwen25-05b-local-lora"
 seed: 42
 
 max_seq_len: 1024
@@ -22,9 +22,9 @@ logging_steps: 5
 use_qlora: true
 load_in_4bit: true
 bnb_4bit_quant_type: "nf4"
-bnb_4bit_compute_dtype: "bfloat16"
+bnb_4bit_compute_dtype: "float16"
 gradient_checkpointing: true
-bf16: true
+bf16: false
 fp16: false
 
 lora_r: 16

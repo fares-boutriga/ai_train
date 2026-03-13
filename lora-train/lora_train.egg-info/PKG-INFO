@@ -1,0 +1,235 @@
+Metadata-Version: 2.4
+Name: lora-train
+Version: 0.1.0
+Summary: Local + RunPod LoRA/QLoRA fine-tuning toolkit.
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: accelerate>=0.33.0
+Requires-Dist: bitsandbytes>=0.43.0
+Requires-Dist: datasets>=2.20.0
+Requires-Dist: huggingface-hub>=0.24.0
+Requires-Dist: peft>=0.12.0
+Requires-Dist: python-dotenv>=1.0.1
+Requires-Dist: pyyaml>=6.0.1
+Requires-Dist: tensorboard>=2.17.0
+Requires-Dist: torch>=2.2.0
+Requires-Dist: transformers>=4.44.0
+Requires-Dist: trl>=0.9.6
+Requires-Dist: wandb>=0.17.0
+
+# lora-train
+
+Complete LoRA/QLoRA fine-tuning repo for:
+- `LOCAL (dev)`: Mistral 7B Instruct on a single small GPU (or CPU fallback, slow)
+- `PRODUCTION (cloud)`: Qwen2.5-14B Instruct on RunPod (A6000+ recommended)
+
+Stack:
+- PyTorch + Hugging Face Transformers
+- PEFT (LoRA/QLoRA)
+- TRL `SFTTrainer`
+- Accelerate
+- Optional W&B + TensorBoard logging
+
+## Repository Layout
+
+```text
+lora-train/
+  configs/
+  data/
+  scripts/
+  src/
+  deploy/
+  .env.local.example
+  .env.prod.example
+  pyproject.toml
+  README.md
+```
+
+## Quickstart (Local Train)
+
+1. Install dependencies:
+```bash
+cd lora-train
+python -m venv .venv
+source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
+pip install -U pip
+pip install .
+```
+
+2. Create local env file:
+```bash
+cp .env.local.example .env.local
+```
+
+3. (Optional) Convert your dataset to chat JSONL:
+```bash
+python scripts/prepare_dataset.py \
+  --input data/sample_train.jsonl \
+  --output data/train_chat.jsonl \
+  --system-prompt "You are a helpful assistant." \
+  --overwrite
+```
+
+4. Run local training:
+```bash
+bash scripts/train_local.sh
+```
+
+Or directly:
+```bash
+accelerate launch -m src.train --config configs/local.yaml --env-file .env.local
+```
+
+Outputs:
+- Adapter: `outputs/<run_name>/adapter`
+- Checkpoints/state: `outputs/<run_name>/checkpoints`
+
+## Quickstart (RunPod Train)
+
+1. Build/push image with `deploy/Dockerfile` or sync this repo to RunPod volume.
+2. Create `.env.prod` from example:
+```bash
+cp .env.prod.example .env.prod
+```
+3. Set production values (`DATA_TRAIN_PATH`, `OUTPUT_DIR`, `HF_TOKEN`, etc.).
+4. Start:
+```bash
+bash deploy/runpod_start.sh
+```
+This script:
+- prints GPU info
+- logs into HF if `HF_TOKEN` exists
+- runs preflight checks
+- launches training with Accelerate and `configs/prod.yaml`
+
+RunPod details: `deploy/runpod_notes.md`.
+
+## Data Preparation
+
+Supported inputs:
+- JSONL instruction format:
+```json
+{"instruction":"...", "input":"optional", "output":"..."}
+```
+- JSONL chat format:
+```json
+{"messages":[{"role":"system","content":"..."},{"role":"user","content":"..."},{"role":"assistant","content":"..."}]}
+```
+- CSV with either `instruction,input,output` or a JSON `messages` column.
+
+Use:
+```bash
+python scripts/prepare_dataset.py --input <raw.jsonl|raw.csv> --output <chat.jsonl> --overwrite
+```
+
+## Config System (Precedence)
+
+Configuration merge order:
+1. YAML defaults (`configs/local.yaml` or `configs/prod.yaml`)
+2. Environment variables (`.env.local` / `.env.prod`)
+3. CLI overrides (`--override KEY=VALUE`) and explicit CLI args
+
+Example:
+```bash
+accelerate launch -m src.train \
+  --config configs/local.yaml \
+  --env-file .env.local \
+  --override LEARNING_RATE=1e-4 \
+  --override RUN_NAME=exp-lr1e4
+```
+
+## LoRA Target Modules (Mistral vs Qwen)
+
+By default, if `LORA_TARGET_MODULES` is empty, the code selects model-family defaults:
+- Mistral: `q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj`
+- Qwen2.5: `q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj`
+
+To override:
+```bash
+LORA_TARGET_MODULES=q_proj,k_proj,v_proj,o_proj
+```
+or:
+```bash
+--override LORA_TARGET_MODULES=q_proj,k_proj,v_proj,o_proj
+```
+
+## Evaluation
+
+Run eval on held-out set and generate samples:
+```bash
+bash scripts/eval.sh
+```
+
+Direct call:
+```bash
+python -m src.eval --config configs/local.yaml --env-file .env.local
+```
+
+Outputs:
+- Metrics: `outputs/<run_name>/eval_metrics.json`
+- Samples: `outputs/<run_name>/eval_samples.jsonl`
+
+## Merge LoRA Adapter into Base Model
+
+```bash
+bash scripts/merge_lora.sh
+```
+
+Direct call:
+```bash
+python -m src.merge --config configs/local.yaml --env-file .env.local
+```
+
+Merged output:
+- `outputs/<run_name>/merged`
+
+Optional Hub push:
+```bash
+python -m src.merge \
+  --config configs/prod.yaml \
+  --env-file .env.prod \
+  --push \
+  --override PUSH_TO_HUB=true \
+  --override HUB_REPO_ID=<user-or-org>/<repo-name>
+```
+
+## Logging
+
+- TensorBoard is always enabled via `report_to=tensorboard`.
+- W&B is enabled when `WANDB_PROJECT` is set.
+
+Start TensorBoard:
+```bash
+tensorboard --logdir outputs
+```
+
+## Troubleshooting
+
+OOM errors:
+- Reduce `MAX_SEQ_LEN` (e.g. 4096 -> 2048 -> 1024)
+- Keep `MICRO_BATCH_SIZE=1`
+- Increase `GRAD_ACCUM_STEPS`
+- Ensure `USE_QLORA=true` and `LOAD_IN_4BIT=true`
+- Disable `packing` if fragmentation appears
+
+Slow training:
+- Verify GPU usage with `nvidia-smi`
+- Increase `LOGGING_STEPS` to reduce host overhead
+- Use faster storage for cache/output
+- Prefer A6000/H100 for 14B models
+
+`bf16` not supported:
+- Set `BF16=false`
+- Set `FP16=true`
+- Keep `BNB_4BIT_COMPUTE_DTYPE=float16`
+
+Resume training:
+- Set `RESUME_FROM_CHECKPOINT` to a checkpoint directory or pass:
+```bash
+--override RESUME_FROM_CHECKPOINT=outputs/<run_name>/checkpoints/checkpoint-XXXX
+```
+
+CPU fallback:
+- Supported automatically when CUDA is unavailable, but very slow.
+- For CPU-only debug runs, set tiny values (`MAX_SEQ_LEN=256`, short dataset).
+

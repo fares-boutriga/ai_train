@@ -1,7 +1,7 @@
 # lora-train
 
 Complete LoRA/QLoRA fine-tuning repo for:
-- `LOCAL (dev)`: Mistral 7B Instruct on a single small GPU (or CPU fallback, slow)
+- `LOCAL (dev)`: Qwen2.5-0.5B Instruct on a single small GPU (or CPU fallback, slow)
 - `PRODUCTION (cloud)`: Qwen2.5-14B Instruct on RunPod (A6000+ recommended)
 
 Stack:
@@ -150,6 +150,38 @@ Outputs:
 - Metrics: `outputs/<run_name>/eval_metrics.json`
 - Samples: `outputs/<run_name>/eval_samples.jsonl`
 
+## Single Prompt Test (Base vs Trained)
+
+Use `scripts/run_model.py` to run one message against:
+- base model (`--mode base`)
+- adapter-trained model (`--mode adapter`)
+- merged model (`--mode merged`)
+
+Base model example:
+```bash
+python scripts/run_model.py \
+  --mode base \
+  --base-model Qwen/Qwen2.5-0.5B-Instruct \
+  --message "Explain LoRA in simple words."
+```
+
+Adapter model example:
+```bash
+python scripts/run_model.py \
+  --mode adapter \
+  --base-model Qwen/Qwen2.5-0.5B-Instruct \
+  --adapter-path outputs/qwen25-05b-local-lora/adapter \
+  --message "Explain LoRA in simple words."
+```
+
+Merged model example:
+```bash
+python scripts/run_model.py \
+  --mode merged \
+  --merged-model-path outputs/qwen25-05b-local-lora/merged \
+  --message "Explain LoRA in simple words."
+```
+
 ## Merge LoRA Adapter into Base Model
 
 ```bash
@@ -204,6 +236,11 @@ Slow training:
 - Set `FP16=true`
 - Keep `BNB_4BIT_COMPUTE_DTYPE=float16`
 
+`_amp_foreach_non_finite_check_and_unscale_cuda` not implemented for `BFloat16`:
+- Use `BF16=false`
+- Use `FP16=false` (disable AMP scaler for this setup)
+- Keep QLoRA enabled with `LOAD_IN_4BIT=true` and `BNB_4BIT_COMPUTE_DTYPE=float16`
+
 Resume training:
 - Set `RESUME_FROM_CHECKPOINT` to a checkpoint directory or pass:
 ```bash
@@ -213,4 +250,3 @@ Resume training:
 CPU fallback:
 - Supported automatically when CUDA is unavailable, but very slow.
 - For CPU-only debug runs, set tiny values (`MAX_SEQ_LEN=256`, short dataset).
-

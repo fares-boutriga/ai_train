@@ -130,7 +130,7 @@ def records_to_sft_dataset(records: List[Dict[str, Any]], tokenizer: Any) -> Dat
                     prompt_messages, tokenizer, add_generation_prompt=True
                 ),
                 "target": assistant_response_from_chat(messages),
+                "completion": assistant_response_from_chat(messages),
             }
         )
     return Dataset.from_list(prepared)
-
