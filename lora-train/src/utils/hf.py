@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import logging
+import re
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 import torch
-from huggingface_hub import login
+from huggingface_hub import HfApi, login
 from transformers import BitsAndBytesConfig
 
 
@@ -79,3 +82,48 @@ def maybe_hf_login(token: Optional[str]) -> None:
         return
     logger.info("Logging into Hugging Face Hub from HF_TOKEN.")
     login(token=token, add_to_git_credential=True)
+
+
+def ensure_hub_repo(repo_id: str, private: bool, token: Optional[str]) -> None:
+    api = HfApi(token=token)
+    api.create_repo(repo_id=repo_id, repo_type="model", private=private, exist_ok=True)
+
+
+def create_version_tag(
+    repo_id: str,
+    run_name: str,
+    tag_prefix: str,
+    token: Optional[str],
+    revision: str = "main",
+) -> str:
+    safe_run = re.sub(r"[^a-zA-Z0-9._-]+", "-", run_name).strip("-") or "run"
+    safe_prefix = re.sub(r"[^a-zA-Z0-9._-]+", "-", tag_prefix).strip("-") or "run"
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    tag_name = f"{safe_prefix}-{safe_run}-{timestamp}"
+
+    api = HfApi(token=token)
+    api.create_tag(
+        repo_id=repo_id,
+        repo_type="model",
+        tag=tag_name,
+        revision=revision,
+        tag_message=f"Auto tag for run: {run_name}",
+    )
+    return tag_name
+
+
+def upload_folder_to_hub(
+    repo_id: str,
+    folder_path: str | Path,
+    token: Optional[str],
+    commit_message: str,
+    delete_patterns: Optional[list[str]] = None,
+) -> None:
+    api = HfApi(token=token)
+    api.upload_folder(
+        repo_id=repo_id,
+        repo_type="model",
+        folder_path=str(folder_path),
+        commit_message=commit_message,
+        delete_patterns=delete_patterns,
+    )

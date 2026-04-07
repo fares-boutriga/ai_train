@@ -43,5 +43,7 @@ hf_token: null
 push_to_hub: false
 hub_repo_id: null
 hub_private: true
+hub_auto_tag: true
+hub_tag_prefix: "run"
 trust_remote_code: false
 attn_implementation: null

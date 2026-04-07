@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
@@ -10,7 +11,13 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from .config import ConfigError, load_train_config, parse_override_pairs, save_resolved_config
 from .env import load_env_file
-from .utils.hf import choose_model_dtype, maybe_hf_login
+from .utils.hf import (
+    create_version_tag,
+    choose_model_dtype,
+    ensure_hub_repo,
+    maybe_hf_login,
+    upload_folder_to_hub,
+)
 from .utils.logging import setup_logging
 
 
@@ -88,11 +95,31 @@ def main() -> None:
     if push_now:
         if not cfg.hub_repo_id:
             raise SystemExit("HUB_REPO_ID is required to push merged model.")
-        merged.push_to_hub(cfg.hub_repo_id, private=cfg.hub_private, token=cfg.hf_token)
-        tokenizer.push_to_hub(
-            cfg.hub_repo_id, private=cfg.hub_private, token=cfg.hf_token
+        ensure_hub_repo(cfg.hub_repo_id, private=cfg.hub_private, token=cfg.hf_token)
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        commit_message = f"merge:{cfg.run_name} [{stamp}]"
+        # Clean stale LoRA adapter files when reusing the same Hub repo for a merged model.
+        upload_folder_to_hub(
+            repo_id=cfg.hub_repo_id,
+            folder_path=output_path,
+            token=cfg.hf_token,
+            commit_message=commit_message,
+            delete_patterns=[
+                "adapter_config.json",
+                "adapter_model.bin",
+                "adapter_model.safetensors",
+            ],
         )
         logger.info("Pushed merged model to Hub: %s", cfg.hub_repo_id)
+        if cfg.hub_auto_tag:
+            tag_name = create_version_tag(
+                repo_id=cfg.hub_repo_id,
+                run_name=f"{cfg.run_name}-merged",
+                tag_prefix=cfg.hub_tag_prefix,
+                token=cfg.hf_token,
+                revision="main",
+            )
+            logger.info("Created Hub version tag: %s", tag_name)
 
 
 if __name__ == "__main__":

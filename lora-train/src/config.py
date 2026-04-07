@@ -120,6 +120,8 @@ FIELD_SPECS: Dict[str, FieldSpec] = {
     "push_to_hub": FieldSpec("PUSH_TO_HUB", parse_bool, False),
     "hub_repo_id": FieldSpec("HUB_REPO_ID", parse_optional_str, None),
     "hub_private": FieldSpec("HUB_PRIVATE", parse_bool, True),
+    "hub_auto_tag": FieldSpec("HUB_AUTO_TAG", parse_bool, True),
+    "hub_tag_prefix": FieldSpec("HUB_TAG_PREFIX", parse_str, "run"),
     "trust_remote_code": FieldSpec("TRUST_REMOTE_CODE", parse_bool, False),
     "attn_implementation": FieldSpec("ATTN_IMPLEMENTATION", parse_optional_str, None),
 }
@@ -170,6 +172,8 @@ class TrainConfig:
     push_to_hub: bool
     hub_repo_id: Optional[str]
     hub_private: bool
+    hub_auto_tag: bool
+    hub_tag_prefix: str
     trust_remote_code: bool
     attn_implementation: Optional[str]
 
@@ -228,6 +232,8 @@ class TrainConfig:
             raise ConfigError("`eval_split_ratio` must be in [0, 1).")
         if self.push_to_hub and not self.hub_repo_id:
             raise ConfigError("`hub_repo_id` is required when push_to_hub=true.")
+        if self.hub_auto_tag and not self.hub_tag_prefix.strip():
+            raise ConfigError("`hub_tag_prefix` cannot be empty when hub_auto_tag=true.")
         if self.attn_implementation and self.attn_implementation not in {
             "eager",
             "sdpa",

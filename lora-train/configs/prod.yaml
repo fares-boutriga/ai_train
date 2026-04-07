@@ -1,8 +1,8 @@
-model_id: "Qwen/Qwen2.5-14B-Instruct"
+model_id: "Qwen/Qwen3.5-4B"
 data_train_path: "/workspace/lora-train/data/sample_train.jsonl"
 data_eval_path: "/workspace/lora-train/data/sample_eval.jsonl"
 output_dir: "/workspace/outputs"
-run_name: "qwen25-14b-runpod-lora"
+run_name: "qwen35-4b-runpod-lora"
 seed: 42
 
 max_seq_len: 4096
@@ -43,5 +43,7 @@ hf_token: null
 push_to_hub: false
 hub_repo_id: null
 hub_private: true
+hub_auto_tag: true
+hub_tag_prefix: "run"
 trust_remote_code: false
 attn_implementation: null

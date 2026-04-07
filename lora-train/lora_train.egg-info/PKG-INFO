@@ -20,7 +20,7 @@ Requires-Dist: wandb>=0.17.0
 # lora-train
 
 Complete LoRA/QLoRA fine-tuning repo for:
-- `LOCAL (dev)`: Mistral 7B Instruct on a single small GPU (or CPU fallback, slow)
+- `LOCAL (dev)`: Qwen2.5-0.5B Instruct on a single small GPU (or CPU fallback, slow)
 - `PRODUCTION (cloud)`: Qwen2.5-14B Instruct on RunPod (A6000+ recommended)
 
 Stack:
@@ -122,6 +122,46 @@ Use:
 python scripts/prepare_dataset.py --input <raw.jsonl|raw.csv> --output <chat.jsonl> --overwrite
 ```
 
+For BIM tabular datasets (like `bim_ai_civil_engineering_dataset.csv`), use the dedicated converter:
+```bash
+python scripts/prepare_bim_dataset.py \
+  --input "/c/Users/boutr/Downloads/bim_ai_civil_engineering_dataset.csv" \
+  --train-output data/bim_train_chat.jsonl \
+  --eval-output data/bim_eval_chat.jsonl \
+  --target-column Risk_Level \
+  --drop-empty-rows \
+  --overwrite
+```
+
+This generates chat data for a prediction task:
+- user: project telemetry fields
+- assistant: target label (default sentence style, e.g. `Risk level: High.`)
+
+After generation, set:
+```env
+DATA_TRAIN_PATH=data/bim_train_chat.jsonl
+DATA_EVAL_PATH=data/bim_eval_chat.jsonl
+```
+
+For generic tabular CSV/JSONL (for example a Kaggle domain dataset), map columns explicitly:
+```bash
+python scripts/prepare_dataset.py \
+  --input data/bim_raw.csv \
+  --output data/bim_chat.jsonl \
+  --instruction-column question \
+  --output-column answer \
+  --input-columns building_type,discipline,context \
+  --include-other-columns-as-input \
+  --drop-empty-rows \
+  --system-prompt "You are a BIM expert assistant." \
+  --overwrite
+```
+
+Notes:
+- `--instruction-column` and `--output-column` are required for non-standard schemas.
+- `--input-columns` is optional, comma-separated.
+- `--include-other-columns-as-input` appends every remaining non-empty column to context.
+
 ## Config System (Precedence)
 
 Configuration merge order:
@@ -168,6 +208,38 @@ python -m src.eval --config configs/local.yaml --env-file .env.local
 Outputs:
 - Metrics: `outputs/<run_name>/eval_metrics.json`
 - Samples: `outputs/<run_name>/eval_samples.jsonl`
+
+## Single Prompt Test (Base vs Trained)
+
+Use `scripts/run_model.py` to run one message against:
+- base model (`--mode base`)
+- adapter-trained model (`--mode adapter`)
+- merged model (`--mode merged`)
+
+Base model example:
+```bash
+python scripts/run_model.py \
+  --mode base \
+  --base-model Qwen/Qwen2.5-0.5B-Instruct \
+  --message "Explain LoRA in simple words."
+```
+
+Adapter model example:
+```bash
+python scripts/run_model.py \
+  --mode adapter \
+  --base-model Qwen/Qwen2.5-0.5B-Instruct \
+  --adapter-path outputs/qwen25-05b-local-lora/adapter \
+  --message "Explain LoRA in simple words."
+```
+
+Merged model example:
+```bash
+python scripts/run_model.py \
+  --mode merged \
+  --merged-model-path outputs/qwen25-05b-local-lora/merged \
+  --message "Explain LoRA in simple words."
+```
 
 ## Merge LoRA Adapter into Base Model
 
@@ -223,6 +295,11 @@ Slow training:
 - Set `FP16=true`
 - Keep `BNB_4BIT_COMPUTE_DTYPE=float16`
 
+`_amp_foreach_non_finite_check_and_unscale_cuda` not implemented for `BFloat16`:
+- Use `BF16=false`
+- Use `FP16=false` (disable AMP scaler for this setup)
+- Keep QLoRA enabled with `LOAD_IN_4BIT=true` and `BNB_4BIT_COMPUTE_DTYPE=float16`
+
 Resume training:
 - Set `RESUME_FROM_CHECKPOINT` to a checkpoint directory or pass:
 ```bash
@@ -232,4 +309,3 @@ Resume training:
 CPU fallback:
 - Supported automatically when CUDA is unavailable, but very slow.
 - For CPU-only debug runs, set tiny values (`MAX_SEQ_LEN=256`, short dataset).
-

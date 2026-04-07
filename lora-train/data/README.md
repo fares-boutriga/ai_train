@@ -22,3 +22,26 @@ Supported input formats:
 
 Use `scripts/prepare_dataset.py` to convert instruction-style rows to chat JSONL.
 
+For generic tabular datasets (custom columns), use:
+```bash
+python scripts/prepare_dataset.py \
+  --input data/raw.csv \
+  --output data/train_chat.jsonl \
+  --instruction-column question \
+  --output-column answer \
+  --input-columns context,metadata \
+  --include-other-columns-as-input \
+  --drop-empty-rows \
+  --overwrite
+```
+
+For BIM risk prediction from tabular CSV:
+```bash
+python scripts/prepare_bim_dataset.py \
+  --input "/c/Users/boutr/Downloads/bim_ai_civil_engineering_dataset.csv" \
+  --train-output data/bim_train_chat.jsonl \
+  --eval-output data/bim_eval_chat.jsonl \
+  --target-column Risk_Level \
+  --drop-empty-rows \
+  --overwrite
+```

@@ -1,0 +1,15 @@
+.git
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+outputs
+wandb
+runs
+models
+build
+*.egg-info
+.env.local
+.env.prod
+.env

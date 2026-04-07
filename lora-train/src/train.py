@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import inspect
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
@@ -23,7 +24,9 @@ from .utils.hf import (
     bf16_supported,
     build_4bit_config,
     choose_model_dtype,
+    create_version_tag,
     default_lora_target_modules,
+    ensure_hub_repo,
     maybe_hf_login,
 )
 from .utils.logging import configure_wandb, resolve_report_to, setup_logging
@@ -352,13 +355,31 @@ def main() -> None:
     if cfg.push_to_hub:
         if not cfg.hub_repo_id:
             raise SystemExit("PUSH_TO_HUB=true requires HUB_REPO_ID.")
+        ensure_hub_repo(cfg.hub_repo_id, private=cfg.hub_private, token=cfg.hf_token)
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        commit_message = f"train:{cfg.run_name} [{stamp}]"
         trainer.model.push_to_hub(
-            cfg.hub_repo_id, private=cfg.hub_private, token=cfg.hf_token
+            cfg.hub_repo_id,
+            private=cfg.hub_private,
+            token=cfg.hf_token,
+            commit_message=commit_message,
         )
         tokenizer.push_to_hub(
-            cfg.hub_repo_id, private=cfg.hub_private, token=cfg.hf_token
+            cfg.hub_repo_id,
+            private=cfg.hub_private,
+            token=cfg.hf_token,
+            commit_message=f"{commit_message} tokenizer",
         )
         logger.info("Pushed adapter/tokenizer to Hub repo: %s", cfg.hub_repo_id)
+        if cfg.hub_auto_tag:
+            tag_name = create_version_tag(
+                repo_id=cfg.hub_repo_id,
+                run_name=cfg.run_name,
+                tag_prefix=cfg.hub_tag_prefix,
+                token=cfg.hf_token,
+                revision="main",
+            )
+            logger.info("Created Hub version tag: %s", tag_name)
 
     logger.info("Training complete. Adapter saved to %s", cfg.adapter_dir)
 

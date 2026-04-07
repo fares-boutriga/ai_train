@@ -1,10 +1,11 @@
 # RunPod Notes (Production)
 
 ## Recommended GPU
-- Minimum: RTX A6000 (48 GB) for QLoRA on Qwen2.5-14B.
-- Better throughput: H100, A100 80GB, or multi-GPU nodes.
+- Minimum: RTX A5000 / RTX A6000 for QLoRA on Qwen3.5-4B.
+- Better throughput: RTX A6000, H100, or A100 80GB.
 
 ## Storage and Mounts
+- The training code lives in the container image at `/app/lora-train`.
 - Mount a persistent volume for outputs and cache:
   - `/workspace/outputs` for checkpoints/adapters/merged models
   - `/workspace/hf-cache` for Hugging Face cache
@@ -14,9 +15,9 @@
 
 ## Environment Variables in RunPod UI
 Set these at pod launch (or via `.env.prod`):
-- `MODEL_ID=Qwen/Qwen2.5-14B-Instruct`
-- `DATA_TRAIN_PATH=/workspace/lora-train/data/train.jsonl`
-- `DATA_EVAL_PATH=/workspace/lora-train/data/eval.jsonl`
+- `MODEL_ID=Qwen/Qwen3.5-4B`
+- `DATA_TRAIN_PATH=/app/lora-train/data/train.jsonl`
+- `DATA_EVAL_PATH=/app/lora-train/data/eval.jsonl`
 - `RUN_NAME=qwen-prod-run`
 - `HF_TOKEN=...` (optional, required for private model/repo or Hub push)
 - `WANDB_API_KEY=...` (optional)
@@ -38,4 +39,3 @@ accelerate launch -m src.train \
   --env-file .env.prod \
   --override RESUME_FROM_CHECKPOINT=/workspace/outputs/qwen-prod-run/checkpoints/checkpoint-1200
 ```
-

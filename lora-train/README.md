@@ -2,7 +2,7 @@
 
 Complete LoRA/QLoRA fine-tuning repo for:
 - `LOCAL (dev)`: Qwen2.5-0.5B Instruct on a single small GPU (or CPU fallback, slow)
-- `PRODUCTION (cloud)`: Qwen2.5-14B Instruct on RunPod (A6000+ recommended)
+- `PRODUCTION (cloud)`: Qwen3.5-4B on RunPod
 
 Stack:
 - PyTorch + Hugging Face Transformers
@@ -103,6 +103,46 @@ Use:
 python scripts/prepare_dataset.py --input <raw.jsonl|raw.csv> --output <chat.jsonl> --overwrite
 ```
 
+For BIM tabular datasets (like `bim_ai_civil_engineering_dataset.csv`), use the dedicated converter:
+```bash
+python scripts/prepare_bim_dataset.py \
+  --input "/c/Users/boutr/Downloads/bim_ai_civil_engineering_dataset.csv" \
+  --train-output data/bim_train_chat.jsonl \
+  --eval-output data/bim_eval_chat.jsonl \
+  --target-column Risk_Level \
+  --drop-empty-rows \
+  --overwrite
+```
+
+This generates chat data for a prediction task:
+- user: project telemetry fields
+- assistant: target label (default sentence style, e.g. `Risk level: High.`)
+
+After generation, set:
+```env
+DATA_TRAIN_PATH=data/bim_train_chat.jsonl
+DATA_EVAL_PATH=data/bim_eval_chat.jsonl
+```
+
+For generic tabular CSV/JSONL (for example a Kaggle domain dataset), map columns explicitly:
+```bash
+python scripts/prepare_dataset.py \
+  --input data/bim_raw.csv \
+  --output data/bim_chat.jsonl \
+  --instruction-column question \
+  --output-column answer \
+  --input-columns building_type,discipline,context \
+  --include-other-columns-as-input \
+  --drop-empty-rows \
+  --system-prompt "You are a BIM expert assistant." \
+  --overwrite
+```
+
+Notes:
+- `--instruction-column` and `--output-column` are required for non-standard schemas.
+- `--input-columns` is optional, comma-separated.
+- `--include-other-columns-as-input` appends every remaining non-empty column to context.
+
 ## Config System (Precedence)
 
 Configuration merge order:
@@ -123,7 +163,7 @@ accelerate launch -m src.train \
 
 By default, if `LORA_TARGET_MODULES` is empty, the code selects model-family defaults:
 - Mistral: `q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj`
-- Qwen2.5: `q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj`
+- Qwen / Qwen3.5: `q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj`
 
 To override:
 ```bash
@@ -206,6 +246,38 @@ python -m src.merge \
   --override HUB_REPO_ID=<user-or-org>/<repo-name>
 ```
 
+## Push To Hugging Face + Versioning
+
+Enable push in your env/config:
+```env
+HF_TOKEN=hf_xxx
+PUSH_TO_HUB=true
+HUB_REPO_ID=fares-boutriga/Damork
+HUB_PRIVATE=true
+HUB_AUTO_TAG=true
+HUB_TAG_PREFIX=run
+```
+
+Behavior:
+- Every push creates a new Hub commit (standard HF versioning).
+- This repo also auto-creates a Git tag per push:
+  - format: `<HUB_TAG_PREFIX>-<RUN_NAME>-<UTC timestamp>`
+  - example: `run-qwen25-05b-local-lora-20260317-143001`
+
+You can later pin a specific version in RunPod/inference with a revision tag:
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+model = AutoModelForCausalLM.from_pretrained(
+    "fares-boutriga/Damork",
+    revision="run-qwen25-05b-local-lora-20260317-143001",
+)
+tokenizer = AutoTokenizer.from_pretrained(
+    "fares-boutriga/Damork",
+    revision="run-qwen25-05b-local-lora-20260317-143001",
+)
+```
+
 ## Logging
 
 - TensorBoard is always enabled via `report_to=tensorboard`.
@@ -229,7 +301,7 @@ Slow training:
 - Verify GPU usage with `nvidia-smi`
 - Increase `LOGGING_STEPS` to reduce host overhead
 - Use faster storage for cache/output
-- Prefer A6000/H100 for 14B models
+- Prefer A5000/A6000 or better for Qwen3.5-4B QLoRA runs
 
 `bf16` not supported:
 - Set `BF16=false`
